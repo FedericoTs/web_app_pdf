@@ -79,6 +79,41 @@ export interface Database {
           settings?: Json
         }
       }
+      extracted_data: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          file_id: string
+          user_id: string
+          extracted_data: Json
+          schema_used: Json
+          status: 'pending' | 'completed' | 'error'
+          error_message?: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          file_id: string
+          user_id: string
+          extracted_data: Json
+          schema_used: Json
+          status?: 'pending' | 'completed' | 'error'
+          error_message?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          file_id?: string
+          user_id?: string
+          extracted_data?: Json
+          schema_used?: Json
+          status?: 'pending' | 'completed' | 'error'
+          error_message?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

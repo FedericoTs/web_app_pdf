@@ -54,7 +54,7 @@ Use Supabase for authentication
 
 ### 2. Data Storage
 - The uploaded PDF should immidiately stored in a Supabase database.
-- For each extract and schema definition, the data extracted should be stored in a MongoDB database in a dedicated table.
+- For each extract and schema definition, the data extracted should be stored in a Supabase database in a dedicated table.
 - The user can view and filter the data or download it as a CSV or Excel file.
 
 ### 3. Data Processing

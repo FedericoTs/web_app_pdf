@@ -12,33 +12,20 @@ import {
 } from '@tanstack/react-table'
 import { ArrowUpDown, Download } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { createClient } from '@/lib/supabase/client'
 
 // Types
 type ProcessingRecord = {
   id: string
   filename: string
-  status: 'completed' | 'failed' | 'processing'
-  type: string
-  processedAt: string
-  provider: string
-  cost: number
-}
-
-// Sample data generator
-const generateSampleData = (): ProcessingRecord[] => {
-  const types = ['Invoice', 'Receipt', 'Contract', 'Report']
-  const providers = ['AWS', 'Azure', 'GCP']
-  const statuses: ProcessingRecord['status'][] = ['completed', 'failed', 'processing']
-
-  return Array.from({ length: 50 }, (_, i) => ({
-    id: `doc-${i + 1}`,
-    filename: `document-${i + 1}.pdf`,
-    status: statuses[Math.floor(Math.random() * statuses.length)],
-    type: types[Math.floor(Math.random() * types.length)],
-    processedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-    provider: providers[Math.floor(Math.random() * providers.length)],
-    cost: Number((Math.random() * 10).toFixed(4)),
-  }))
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  metadata: {
+    type?: string
+    provider?: string
+    cost?: number
+  }
+  created_at: string
+  updated_at: string
 }
 
 // Column definitions
@@ -77,14 +64,16 @@ const columns = [
               ? 'bg-green-500'
               : info.getValue() === 'failed'
               ? 'bg-red-500'
-              : 'bg-yellow-500'
+              : info.getValue() === 'pending'
+              ? 'bg-yellow-500'
+              : 'bg-blue-500'
           }`}
         />
         <span className="capitalize">{info.getValue()}</span>
       </div>
     ),
   }),
-  columnHelper.accessor('type', {
+  columnHelper.accessor('metadata.type', {
     header: ({ column }) => (
       <button
         className="flex items-center gap-2"
@@ -95,19 +84,7 @@ const columns = [
       </button>
     ),
   }),
-  columnHelper.accessor('processedAt', {
-    header: ({ column }) => (
-      <button
-        className="flex items-center gap-2"
-        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-      >
-        Processed At
-        <ArrowUpDown className="h-4 w-4" />
-      </button>
-    ),
-    cell: info => new Date(info.getValue()).toLocaleString(),
-  }),
-  columnHelper.accessor('provider', {
+  columnHelper.accessor('metadata.provider', {
     header: ({ column }) => (
       <button
         className="flex items-center gap-2"
@@ -118,7 +95,19 @@ const columns = [
       </button>
     ),
   }),
-  columnHelper.accessor('cost', {
+  columnHelper.accessor('created_at', {
+    header: ({ column }) => (
+      <button
+        className="flex items-center gap-2"
+        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+      >
+        Created At
+        <ArrowUpDown className="h-4 w-4" />
+      </button>
+    ),
+    cell: info => new Date(info.getValue()).toLocaleString(),
+  }),
+  columnHelper.accessor('metadata.cost', {
     header: ({ column }) => (
       <button
         className="flex items-center gap-2"
@@ -128,18 +117,36 @@ const columns = [
         <ArrowUpDown className="h-4 w-4" />
       </button>
     ),
-    cell: info => `$${info.getValue().toFixed(4)}`,
+    cell: info => `$${info.getValue()?.toFixed(4)}`,
   }),
 ]
 
 export default function HistoryPage() {
   const [data, setData] = useState<ProcessingRecord[]>([])
   const [sorting, setSorting] = useState<SortingState>([])
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
 
   useEffect(() => {
-    // In a real app, this would be an API call
-    setData(generateSampleData())
+    fetchData()
   }, [])
+
+  const fetchData = async () => {
+    try {
+      const { data: records, error } = await supabase
+        .from('pdf_documents')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      setData(records)
+    } catch (error) {
+      console.error('Error fetching records:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const table = useReactTable({
     data,
@@ -179,7 +186,12 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Processing History</h2>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Processing History</h2>
+          <p className="text-muted-foreground">
+            View and export your document processing history
+          </p>
+        </div>
         <div className="flex items-center gap-4">
           <button
             onClick={exportToExcel}
@@ -199,55 +211,71 @@ export default function HistoryPage() {
       </div>
 
       <div className="rounded-lg border bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-gray-50">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
-                    <th key={header.id} className="px-4 py-3 text-left font-medium text-gray-500">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id} className="border-b last:border-none hover:bg-gray-50">
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className="px-4 py-3">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="text-muted-foreground">Loading...</div>
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-8">
+            <p className="text-muted-foreground">No documents processed yet</p>
+            <button
+              onClick={() => window.location.href = '/dashboard/upload'}
+              className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            >
+              Upload your first document
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-gray-50">
+                {table.getHeaderGroups().map(headerGroup => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map(header => (
+                      <th key={header.id} className="px-4 py-3 text-left font-medium text-gray-500">
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map(row => (
+                  <tr key={row.id} className="border-b last:border-none hover:bg-gray-50">
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} className="px-4 py-3">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-        <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-lg border bg-white px-3 py-1 text-sm disabled:opacity-50"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-1 text-sm disabled:opacity-50"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </button>
-          </div>
-          <div className="text-sm text-gray-500">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-          </div>
+      <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg border bg-white px-3 py-1 text-sm disabled:opacity-50"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-1 text-sm disabled:opacity-50"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </button>
+        </div>
+        <div className="text-sm text-gray-500">
+          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
         </div>
       </div>
     </div>

@@ -72,11 +72,45 @@ Use Supabase for authentication
 - User should be able to have an overview of their data fatching from Supabase Database.
 - User should be able to visualize the data in the different charts and cards.
 
-## Setings page ('/dashboard/settings')
+## Settings page ('/dashboard/settings')
 - User should be able to change their password.
 - User should be able to change their email address.
 - User should be able to delete their account.
 - User should be able to choose their colour palette.
+
+# Supabase Integration
+
+## Setup
+The project uses Supabase for authentication and data storage. Here's what's been set up:
+
+1. **Environment Variables** (.env.local)
+   - NEXT_PUBLIC_SUPABASE_URL
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+   - SUPABASE_SERVICE_ROLE_KEY
+
+2. **Database Tables**
+   - pdf_documents: Stores PDF document information and processing status
+   - user_settings: Stores user preferences and settings
+
+3. **Authentication**
+   - Middleware for protected routes
+   - Auto-redirect to login page
+   - Session management
+
+## File Structure
+```
+lib/supabase/
+├── client.ts     # Client-side Supabase instance
+├── server.ts     # Server-side Supabase instance
+└── types.ts      # TypeScript types for database schema
+```
+
+## Next Steps
+1. Create a Supabase project at https://app.supabase.com
+2. Create the database tables using the schema defined in types.ts
+3. Copy the project URL and keys from Supabase dashboard to .env.local
+4. Implement authentication UI components
+5. Add data fetching and mutation functions
 
 # Documentation
 ## 1. LlamaParser Documentation
@@ -108,4 +142,3 @@ const completion = await openai.beta.chat.completions.parse({
 });
 
 const event = completion.choices[0].message.parsed;
-'''

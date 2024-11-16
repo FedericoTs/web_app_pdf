@@ -5,6 +5,8 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 import { Button } from "../components/ui/button"
 import { usePathname } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { useRouter } from "next/navigation"
 
 const sidebarItems = [
   {
@@ -37,6 +39,8 @@ export default function DashboardLayout({
   const [isExpanded, setIsExpanded] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
 
   // Handle window resize
   useEffect(() => {
@@ -72,8 +76,9 @@ export default function DashboardLayout({
                   variant="ghost"
                   size="sm"
                   className="flex items-center"
-                  onClick={() => {
-                    // Implement logout functionality
+                  onClick={async () => {
+                    await supabase.auth.signOut()
+                    router.push('/')
                   }}
                 >
                   <LogOut className="w-4 h-4 mr-2" />

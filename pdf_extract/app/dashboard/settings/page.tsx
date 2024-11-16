@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings, User, CreditCard, Palette, Key } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 type Tab = 'account' | 'subscription' | 'appearance' | 'integrations'
 
@@ -15,6 +17,21 @@ interface APIKey {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('account')
+  const [loading, setLoading] = useState(true)
+  const [userProfile, setUserProfile] = useState<{
+    name: string
+    email: string
+  } | null>(null)
+  const [userSettings, setUserSettings] = useState<{
+    theme: string
+    colorPalette: {
+      primary: string
+      secondary: string
+      success: string
+      warning: string
+      error: string
+    }
+  } | null>(null)
   const [colorPalette, setColorPalette] = useState({
     primary: '#8b5cf6',
     secondary: '#ec4899',
@@ -22,22 +39,124 @@ export default function SettingsPage() {
     warning: '#fbbf24',
     error: '#f87171',
   })
-  const [apiKeys, setApiKeys] = useState<APIKey[]>([
-    {
-      id: '1',
-      name: 'Production API Key',
-      key: 'pk_live_xxxxxxxxxxxxx',
-      createdAt: '2024-01-15',
-      lastUsed: '2024-02-10',
-    },
-    {
-      id: '2',
-      name: 'Development API Key',
-      key: 'pk_test_xxxxxxxxxxxxx',
-      createdAt: '2024-01-20',
-      lastUsed: '2024-02-15',
-    },
-  ])
+  const [apiKeys, setApiKeys] = useState<APIKey[]>([])
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
+  const supabase = createClient()
+  const router = useRouter()
+
+  useEffect(() => {
+    loadUserData()
+  }, [])
+
+  const loadUserData = async () => {
+    try {
+      // Get user session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+
+      if (!session) {
+        router.push('/auth/sign-in')
+        return
+      }
+
+      // Get user settings
+      const { data: settings, error: settingsError } = await supabase
+        .from('user_settings')
+        .select('*')
+        .single()
+
+      if (settingsError && settingsError.code !== 'PGRST116') {
+        throw settingsError
+      }
+
+      if (settings) {
+        setUserSettings(settings)
+        if (settings.colorPalette) {
+          setColorPalette(settings.colorPalette)
+        }
+      }
+
+      // Set user profile
+      setUserProfile({
+        name: session.user.user_metadata?.name || '',
+        email: session.user.email || '',
+      })
+    } catch (error) {
+      console.error('Error loading user data:', error)
+      setMessage({ type: 'error', text: 'Failed to load user data' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateProfile = async () => {
+    if (!userProfile) return
+
+    try {
+      setLoading(true)
+      const { error } = await supabase.auth.updateUser({
+        data: { name: userProfile.name }
+      })
+
+      if (error) throw error
+
+      setMessage({ type: 'success', text: 'Profile updated successfully' })
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      setMessage({ type: 'error', text: 'Failed to update profile' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      setLoading(true)
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+
+      if (error) throw error
+
+      setMessage({ type: 'success', text: 'Password updated successfully' })
+    } catch (error) {
+      console.error('Error updating password:', error)
+      setMessage({ type: 'error', text: 'Failed to update password' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateAppearance = async () => {
+    try {
+      setLoading(true)
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          colorPalette,
+          updated_at: new Date().toISOString()
+        })
+
+      if (error) throw error
+
+      setMessage({ type: 'success', text: 'Appearance settings updated successfully' })
+    } catch (error) {
+      console.error('Error updating appearance:', error)
+      setMessage({ type: 'error', text: 'Failed to update appearance settings' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
 
   const tabs = [
     { id: 'account', label: 'Account', icon: User },
@@ -89,7 +208,8 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       className="w-full rounded-lg border px-3 py-2"
-                      defaultValue="John Doe"
+                      value={userProfile?.name || ''}
+                      onChange={(e) => setUserProfile(prev => ({ ...prev!, name: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -97,7 +217,8 @@ export default function SettingsPage() {
                     <input
                       type="email"
                       className="w-full rounded-lg border px-3 py-2"
-                      defaultValue="john@example.com"
+                      value={userProfile?.email || ''}
+                      disabled
                     />
                   </div>
                 </div>
@@ -108,17 +229,29 @@ export default function SettingsPage() {
                 <div className="grid gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Current Password</label>
-                    <input type="password" className="w-full rounded-lg border px-3 py-2" />
+                    <input 
+                      type="password" 
+                      className="w-full rounded-lg border px-3 py-2"
+                      onChange={(e) => {/* Handle password change */}}
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">New Password</label>
-                    <input type="password" className="w-full rounded-lg border px-3 py-2" />
+                    <input 
+                      type="password" 
+                      className="w-full rounded-lg border px-3 py-2"
+                      onChange={(e) => {/* Handle password change */}}
+                    />
                   </div>
                 </div>
               </div>
 
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                Save Changes
+              <button 
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={updateProfile}
+                disabled={loading}
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           )}
@@ -198,8 +331,12 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                Save Changes
+              <button 
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={updateAppearance}
+                disabled={loading}
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           )}

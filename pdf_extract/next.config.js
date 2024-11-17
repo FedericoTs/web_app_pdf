@@ -9,6 +9,12 @@ const nextConfig = {
       };
     }
 
+    if (isServer) {
+      config.externals.push({
+        'onnxruntime-node': 'commonjs onnxruntime-node',
+      });
+    }
+    
     // Handle binary files
     config.module.rules.push({
       test: /\.node$/,
@@ -16,10 +22,13 @@ const nextConfig = {
       exclude: /node_modules/,
     });
 
+    config.module.rules.push({
+      test: /\.pdf$/,
+      type: 'asset/resource',
+    });
+    
     return config;
   },
-  // Disable strict mode for now to avoid double rendering issues
-  reactStrictMode: false,
 }
 
 module.exports = nextConfig;

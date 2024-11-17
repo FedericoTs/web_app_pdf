@@ -1,10 +1,10 @@
 'use client'
 
-import { Button } from "@/app/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { FileText, Search, Database, Zap, Shield, Clock, ChevronRight, CheckCircle2 } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import Navigation from "@/app/components/shared/navigation"
+import Navigation from "@/components/shared/navigation"
 
 export default function Home() {
   const [mounted, setMounted] = useState(false)

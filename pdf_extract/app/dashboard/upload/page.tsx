@@ -1,265 +1,215 @@
-'use client'
+"use client";
 
-import { useState } from "react"
-import { Upload, Plus, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useState } from 'react';
+import { toast } from 'react-hot-toast';
+import FileUpload from '@/components/FileUpload';
+import SchemaDefinition from '@/components/SchemaDefinition';
+import { Progress } from '@/components/ui/progress';
+import DataPreview from '@/components/DataPreview';
+
+interface FileWithText extends File {
+  extractedText?: string;
+}
 
 interface Field {
-  id: string
-  name: string
-  type: 'single' | 'multiple'
+  id: string;
+  name: string;
+  type: 'text' | 'number' | 'group';
+  description: string;
+  fields?: Field[];
 }
 
-interface Group {
-  id: string
-  name: string
-  fields: Field[]
-  groups: Group[]
-}
+// Empty initial schema to let users build from scratch
+const defaultSchema: Field[] = [];
 
-export default function UploadPage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [groups, setGroups] = useState<Group[]>([])
+export default function Home() {
+  const [files, setFiles] = useState<FileWithText[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [processedData, setProcessedData] = useState<any[]>([]);
+  const [downloading, setDownloading] = useState(false);
+  const [schema, setSchema] = useState<Field[]>(defaultSchema);
+  const [processingProgress, setProcessingProgress] = useState(0);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && file.type === 'application/pdf') {
-      setSelectedFile(file)
-    } else {
-      alert('Please select a PDF file')
-    }
-  }
+  const handleFilesSelected = (newFiles: File[]) => {
+    setFiles(prev => [...prev, ...newFiles]);
+    toast.success(`Added ${newFiles.length} file(s)`);
+  };
 
-  const addGroup = (parentGroup?: Group) => {
-    const newGroup: Group = {
-      id: Math.random().toString(36).substring(7),
-      name: `Group ${groups.length + 1}`,
-      fields: [],
-      groups: []
+  const handleStartExtraction = async () => {
+    if (schema.length === 0) {
+      toast.error('Please define a data extraction schema first');
+      return;
     }
 
-    if (parentGroup) {
-      setGroups(prevGroups => {
-        const updateGroupRecursively = (groups: Group[]): Group[] => {
-          return groups.map(group => {
-            if (group.id === parentGroup.id) {
-              return { ...group, groups: [...group.groups, newGroup] }
-            }
-            return { ...group, groups: updateGroupRecursively(group.groups) }
-          })
+    setProcessing(true);
+    setProcessingProgress(0);
+    const results: any[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.extractedText) {
+          toast.error(`No extracted text found for file: ${file.name}`);
+          continue;
         }
-        return updateGroupRecursively(prevGroups)
-      })
-    } else {
-      setGroups(prevGroups => [...prevGroups, newGroup])
-    }
-  }
 
-  const addField = (group: Group) => {
-    const newField: Field = {
-      id: Math.random().toString(36).substring(7),
-      name: `Field ${group.fields.length + 1}`,
-      type: 'single'
-    }
+        // Update progress before processing each file
+        const currentProgress = Math.round((i / files.length) * 100);
+        setProcessingProgress(currentProgress);
+        
+        const response = await fetch('/api/process-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: file.extractedText,
+            schema: schema
+          }),
+        });
 
-    setGroups(prevGroups => {
-      const updateGroupRecursively = (groups: Group[]): Group[] => {
-        return groups.map(g => {
-          if (g.id === group.id) {
-            return { ...g, fields: [...g.fields, newField] }
-          }
-          return { ...g, groups: updateGroupRecursively(g.groups) }
-        })
-      }
-      return updateGroupRecursively(prevGroups)
-    })
-  }
+        if (!response.ok) {
+          throw new Error(`Error processing ${file.name}: ${response.statusText}`);
+        }
 
-  const updateField = (groupId: string, fieldId: string, updates: Partial<Field>) => {
-    setGroups(prevGroups => {
-      const updateGroupRecursively = (groups: Group[]): Group[] => {
-        return groups.map(group => {
-          if (group.id === groupId) {
-            return {
-              ...group,
-              fields: group.fields.map(field =>
-                field.id === fieldId ? { ...field, ...updates } : field
-              )
+        const data = await response.json();
+        
+        // Create an array of items from the response
+        const items = data[Object.keys(data)[0]].map((_, index) => {
+          const item: any = { fileName: file.name };
+          for (const field of schema) {
+            if (field.type === 'group') {
+              item[field.name] = data[field.name] || [];
+            } else {
+              item[field.name] = data[field.name]?.[index] || null;
             }
           }
-          return { ...group, groups: updateGroupRecursively(group.groups) }
-        })
-      }
-      return updateGroupRecursively(prevGroups)
-    })
-  }
+          return item;
+        });
 
-  const removeField = (groupId: string, fieldId: string) => {
-    setGroups(prevGroups => {
-      const updateGroupRecursively = (groups: Group[]): Group[] => {
-        return groups.map(group => {
-          if (group.id === groupId) {
-            return {
-              ...group,
-              fields: group.fields.filter(field => field.id !== fieldId)
-            }
-          }
-          return { ...group, groups: updateGroupRecursively(group.groups) }
-        })
-      }
-      return updateGroupRecursively(prevGroups)
-    })
-  }
+        results.push(...items);
 
-  const removeGroup = (groupId: string) => {
-    setGroups(prevGroups => {
-      const removeGroupRecursively = (groups: Group[]): Group[] => {
-        return groups.filter(group => {
-          if (group.id === groupId) return false
-          group.groups = removeGroupRecursively(group.groups)
-          return true
-        })
       }
-      return removeGroupRecursively(prevGroups)
-    })
-  }
 
-  const handleStartExtraction = () => {
-    if (!selectedFile) {
-      alert('Please select a PDF file first')
-      return
+      // Set progress to 100% only after all files are processed
+      setProcessingProgress(100);
+      setProcessedData(results);
+      toast.success(`Successfully processed ${results.length} file(s)`);
+      
+    } catch (error) {
+      console.error('Error during extraction:', error);
+      toast.error('Error during extraction. Please check the console for details.');
+    } finally {
+      // Keep the progress visible for a moment before resetting
+      setTimeout(() => {
+        setProcessing(false);
+        setProcessingProgress(0);
+      }, 500);
     }
-    console.log('Starting extraction with configuration:', { file: selectedFile, groups })
-    // TODO: Implement extraction logic
-  }
+  };
 
-  const renderGroup = (group: Group, level = 0) => (
-    <div key={group.id} className={`ml-${level * 4} mb-4 p-4 border rounded-lg`}>
-      <div className="flex items-center justify-between mb-2">
-        <Input
-          value={group.name}
-          onChange={(e) => {
-            setGroups(prevGroups => {
-              const updateGroupRecursively = (groups: Group[]): Group[] => {
-                return groups.map(g => {
-                  if (g.id === group.id) {
-                    return { ...g, name: e.target.value }
-                  }
-                  return { ...g, groups: updateGroupRecursively(g.groups) }
-                })
-              }
-              return updateGroupRecursively(prevGroups)
-            })
-          }}
-          className="max-w-xs"
-        />
-        <Button variant="destructive" size="sm" onClick={() => removeGroup(group.id)}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+  const handleDownloadExcel = async (data: any[]) => {
+    setDownloading(true);
+    const toastId = toast.loading('Generating Excel file...');
+    
+    try {
+      const response = await fetch('/api/generate-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: data,
+          schema: schema
+        }),
+      });
 
-      <div className="space-y-4">
-        {group.fields.map(field => (
-          <div key={field.id} className="flex items-center gap-2">
-            <Input
-              value={field.name}
-              onChange={(e) => updateField(group.id, field.id, { name: e.target.value })}
-              placeholder="Field name"
-              className="max-w-xs"
-            />
-            <Select
-              value={field.type}
-              onValueChange={(value: 'single' | 'multiple') => 
-                updateField(group.id, field.id, { type: value })
-              }
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="single">Single</SelectItem>
-                <SelectItem value="multiple">Multiple</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="destructive" size="sm" onClick={() => removeField(group.id, field.id)}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
+      if (!response.ok) {
+        throw new Error('Failed to generate Excel file');
+      }
 
-      <div className="mt-4 space-x-2">
-        <Button variant="outline" size="sm" onClick={() => addField(group)}>
-          <Plus className="h-4 w-4 mr-1" /> Add Field
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => addGroup(group)}>
-          <Plus className="h-4 w-4 mr-1" /> Add Group
-        </Button>
-      </div>
-
-      {group.groups.map(subGroup => renderGroup(subGroup, level + 1))}
-    </div>
-  )
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'extracted_data.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Excel file downloaded successfully', { id: toastId });
+    } catch (error) {
+      console.error('Error downloading Excel:', error);
+      toast.error('Error generating Excel file. Please try again.', { id: toastId });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
-    <div className="container mx-auto p-8">
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Upload PDF Document</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="border-2 border-dashed rounded-lg p-8 text-center">
-            <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="mb-2 text-muted-foreground">
-              {selectedFile ? selectedFile.name : 'Select a PDF file to upload'}
-            </p>
-            <input
-              type="file"
-              accept=".pdf"
-              onChange={handleFileChange}
-              className="hidden"
-              id="file-input"
-            />
-            <Button asChild>
-              <label htmlFor="file-input">Select File</label>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Configure Data Extraction</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <main className="min-h-screen p-8 bg-gray-50">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-900">PDF Data Extractor</h1>
+          <p className="mt-2 text-gray-600">Extract structured data from your PDF files</p>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
           <div className="space-y-4">
-            {groups.map(group => renderGroup(group))}
-            
-            {groups.length === 0 && (
-              <p className="text-muted-foreground text-center py-4">
-                No extraction groups defined yet. Add a group to get started.
-              </p>
+            <h2 className="text-xl font-semibold text-gray-900">1. Upload PDFs</h2>
+            <p className="text-sm text-gray-600">Upload the PDF files you want to process</p>
+            <FileUpload onFilesSelected={handleFilesSelected} />
+            {files.length > 0 && (
+              <div className="text-sm text-gray-600">
+                Selected files: {files.map(f => f.name).join(', ')}
+              </div>
             )}
+          </div>
 
-            <div className="flex justify-between items-center">
-              <Button variant="outline" onClick={() => addGroup()}>
-                <Plus className="h-4 w-4 mr-1" /> Add Group
-              </Button>
-              
-              <Button 
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900">2. Configure Data Extraction Schema</h2>
+            <p className="text-sm text-gray-600">Define the structure of the data you want to extract</p>
+            <SchemaDefinition schema={schema} onChange={setSchema} />
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900">3. Extract Data</h2>
+            <div className="flex flex-col gap-4">
+              <button
                 onClick={handleStartExtraction}
-                disabled={!selectedFile || groups.length === 0}
+                disabled={files.length === 0 || processing || schema.length === 0}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 
+                         disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
               >
-                Start Extraction
-              </Button>
+                {processing ? 'Processing...' : 'Start Extraction'}
+              </button>
+　　 　　　　　
+              {processing && (
+                <div className="space-y-2">
+                  <Progress value={processingProgress} />
+                  <p className="text-sm text-gray-600 text-center">
+                    Processing files... {Math.round(processingProgress)}%
+                  </p>
+                </div>
+              )}
+
+              {processedData.length > 0 && (
+                <div className="space-y-4">
+                  <DataPreview data={processedData} schema={schema} />
+                  <button
+                    onClick={() => handleDownloadExcel(processedData)}
+                    disabled={downloading}
+                    className="w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 
+                             disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {downloading ? 'Generating Excel...' : 'Download as Excel'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
+        </div>
+      </div>
+    </main>
+  );
 }
